@@ -5,9 +5,12 @@
 # @Software : PyCharm
 
 import os
+import time
+
 import numpy as np
 import random
 import pygame
+from Grid import *
 
 
 class Board:
@@ -19,12 +22,12 @@ class Board:
         self.rows = rows
         self.cols = cols
         self.bodies = [np.array([rows // 2, cols // 2])]
-        self.points = np.zeros((rows, cols), dtype=int)
+        self.points = [[Grid(pos=np.array([j, i]), prototype=Blank()) for i in range(cols)] for j in range(rows)]
         # 0: blank, 1: head, 2: body, 3: food
-        self.points[self.bodies[0][0], self.bodies[0][1]] = 1
+        self.points[self.bodies[0][0]][self.bodies[0][1]] = Grid(pos=np.array(self.bodies[0]), prototype=Body())
         self.availables = list(range(self.rows * self.cols))
-        self.availables.remove(self.__xy2liner(self.bodies[0]))
-        self.food_pos = self.__gen_food()
+        self.availables.remove(self.xy2liner(self.bodies[0]))
+        self.food_pos = self.gen_food()
         # 0: down, 1: left, 2: up, 3: right
         self.direct = 0
         # running or end
@@ -35,16 +38,16 @@ class Board:
         self.score = 0
         self.steps = 0
 
-    def __gen_food(self) -> np.array:
+    def gen_food(self) -> np.array:
         liner = random.choice(self.availables)
-        xy = self.__liner2xy(liner)
-        self.points[xy[0], xy[1]] = 3
+        xy = self.liner2xy(liner)
+        self.points[xy[0]][xy[1]] = Grid(pos=np.array(xy), prototype=Food1())
         return xy
 
-    def __xy2liner(self, xy: np.array or list[np.array]) -> int or list[int]:
+    def xy2liner(self, xy: np.array or list[np.array]) -> int or list[int]:
         return xy[0] * self.cols + xy[1]
 
-    def __liner2xy(self, liner: int) -> np.array:
+    def liner2xy(self, liner: int) -> np.array:
         return np.array([liner // self.cols, liner % self.cols])
 
     def __in_range(self, xy: np.array) -> bool:
@@ -61,11 +64,7 @@ class Board:
         s = round(np.sin(radian))
         return np.dot(vector, np.array([[c, s], [-s, c]])).astype(int)
 
-    @staticmethod
-    def __distance(xy1: np.array, xy2: np.array) -> float:
-        return np.sqrt(np.sum(np.square(xy1 - xy2)))
-
-    def one_step(self, action: int, relative: bool = True) -> float:
+    def one_step(self, action: int, relative: bool = True):
         """
         @return the reward
         """
@@ -91,43 +90,13 @@ class Board:
         # the included angle of the forward direction and the x-axis in map coordinate(in 90 degrees units)
         next_head_pos = self.bodies[0] + self.__rotate90(np.array([1, 0]), self.direct)
 
-        if not self.__in_range(next_head_pos) or self.points[next_head_pos[0], next_head_pos[1]] == 2:
-            # out of range or colliding body
+        if not self.__in_range(next_head_pos):
+            # out of range
             self.running = False
-            # return a minus reward
-            return self.die_reward
-        elif self.points[next_head_pos[0], next_head_pos[1]] == 0:
-            # blank
-            self.availables.remove(self.__xy2liner(next_head_pos))
-            self.availables.append(self.__xy2liner(self.bodies[-1]))
-            self.points[next_head_pos[0], next_head_pos[1]] = 1
-            if len(self.bodies) > 1:
-                self.points[self.bodies[0][0], self.bodies[0][1]] = 2
-            else:
-                self.points[self.bodies[0][0], self.bodies[0][1]] = 0
-            self.points[self.bodies[-1][0], self.bodies[-1][1]] = 0
-            self.bodies.insert(0, next_head_pos)
-            self.bodies.pop()
-            dist = self.__distance(self.bodies[0], self.food_pos)
-            return (self.smell_dist - dist) / self.smell_dist if dist < self.smell_dist else 0
-        elif self.points[next_head_pos[0], next_head_pos[1]] == 1:
-            # head
-            raise Exception("There are two heads in ({}, {}) and ({}, {})".format(*self.bodies[0], *next_head_pos))
-        elif self.points[next_head_pos[0], next_head_pos[1]] == 3:
-            # food
-            self.availables.remove(self.__xy2liner(next_head_pos))
-            # self.points[self.bodies[-1][0], self.bodies[-1][1]] = 0  # debug
-            # self.availables.append(self.__xy2liner(self.bodies[-1]))  # debug
-            self.points[next_head_pos[0], next_head_pos[1]] = 1
-            self.points[self.bodies[0][0], self.bodies[0][1]] = 2
-            self.bodies.insert(0, next_head_pos)
-            # self.bodies.pop()  # debug
-            self.food_pos = self.__gen_food()
-            self.score += 1
-            return self.food_reward
-        else:
-            raise Exception("Unknown state {} of point ({}, {})".format(self.points[next_head_pos[0], next_head_pos[1]],
-                                                                        *next_head_pos))
+            return
+
+        # calling the occupied callback function
+        self.points[next_head_pos[0]][next_head_pos[1]].occupied_callback(self)
 
     def get_running(self) -> bool:
         return self.running
@@ -138,10 +107,11 @@ class Board:
 
 class Game:
 
-    def __init__(self, rows, cols, display=False):
+    def __init__(self, rows, cols, speed, display=True):
         self.rows = rows
         self.cols = cols
         self.board = Board(rows, cols)
+        self.speed = speed
         self.display = display
         if self.display:
             pygame.init()
@@ -180,12 +150,13 @@ class Game:
 
 
 if __name__ == '__main__':
-    game = Game(10, 10, True)
+    game = Game(100, 100, 10, True)
     game.draw()
     while game.board.get_running():
-        print(game.board.points)
+        # print(game.board.points)
         action = -1
         for event in pygame.event.get():
+            # print(event)
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_s:
                     action = 0
@@ -198,6 +169,8 @@ if __name__ == '__main__':
         if action != -1:
             game.board.one_step(action, False)
         else:
-            continue
+            # forward
+            game.board.one_step(1, True)
         game.draw()
+        time.sleep(1 / game.speed)
     print(game.board.score)
