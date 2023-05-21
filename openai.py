@@ -4,7 +4,7 @@ import os
 
 headers = {
     'Content-Type': 'application/json',
-    'Authorization': 'Bearer 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',
+    'Authorization': 'Bearer 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',
 }
 
 

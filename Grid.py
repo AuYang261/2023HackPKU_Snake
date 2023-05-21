@@ -80,7 +80,9 @@ class Body(GridPrototype):
 
     def occupied_callback(self, grid_base: GridBase, board, *args):
         # colliding body
-        board.running = False
+        board.state_lock.acquire()
+        board.state = 'end'
+        board.state_lock.release()
 
     def leave_callback(self, grid_base: GridBase, board, *args):
         board.availables.append(board.xy2liner(grid_base.pos))
