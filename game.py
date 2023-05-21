@@ -41,7 +41,8 @@ class Board:
         # 0: down, 1: left, 2: up, 3: right
         self.direct = 0
         # running or end
-        self.running = True
+        self.state = 'wait'
+        self.state_lock = Lock()
         self.smell_dist = 3
         self.die_reward = -5
         self.food_reward = 2
@@ -92,6 +93,9 @@ class Board:
                 self.direct = (self.direct - 1) % 4
             else:
                 raise Exception("Unknown action {}".format(action))
+        elif action == (self.direct + 2) % 4:
+            # backward
+            return
         else:
             self.direct = action
 
@@ -102,14 +106,14 @@ class Board:
 
         if not self.__in_range(next_head_pos):
             # out of range
-            self.running = False
+            self.state = 'end'
             return
 
         # calling the occupied callback function
         self.points[next_head_pos[0]][next_head_pos[1]].occupied_callback(self)
 
-    def get_running(self) -> bool:
-        return self.running
+    def get_state(self) -> str:
+        return self.state
 
     def get_score(self) -> int:
         return self.score
@@ -117,71 +121,111 @@ class Board:
 
 class Game:
 
-    def __init__(self, rows, cols, speed, display=True):
+    def __init__(self, rows, cols, speed, user_input):
         self.rows = rows
         self.cols = cols
         self.board = Board(rows, cols)
         self.speed = speed
-        self.display = display
-        if self.display:
-            pygame.init()
-            self.window_size = (600, 600)
-            self.block_size = (self.window_size[0] / self.cols, self.window_size[1] / self.rows)
-            self.__screen = pygame.display.set_mode(self.window_size, 0, 32)
-            pygame.display.set_caption('Snake')
-            self.__ui_white = pygame.Surface(self.block_size)
-            self.myfont = pygame.font.Font(None, 60)
-            self.chat_period = 20  # s
-            self.chat_last_time = -self.chat_period
-            self.chat_str = ""
-            self.chat_str_lock = Lock()
+
+        pygame.init()
+        self.window_size = (600, 600)
+        self.__screen = pygame.display.set_mode(self.window_size, 0, 32)
+        pygame.display.set_caption('Snake')
+        self.user_input = user_input
+        self.prompt = "卡通游戏风格的" + self.user_input
+
+        self.background_img = None
+
+        self.block_size = (self.window_size[0] / self.cols, self.window_size[1] / self.rows)
+        self.__ui_white = pygame.Surface(self.block_size)
+        self.myfont = pygame.font.Font(None, 60)
+        self.chat_period = 20  # s
+        self.chat_last_time = -self.chat_period
+        self.chat_str = ""
+        self.chat_str_lock = Lock()
 
     def draw(self):
         if not self.__screen:
             return
         self.__screen.fill(color='white')
-        self.__ui_white.fill(color='red')
-        self.__screen.blit(self.__ui_white,
-                           (self.board.food_pos[1] * self.block_size[0], self.board.food_pos[0] * self.block_size[1]))
-        for i, block in enumerate(self.board.bodies):
-            if i == 0:
-                self.__ui_white.fill(color='yellow')
-            else:
-                self.__ui_white.fill(color='blue')
+        self.board.state_lock.acquire()
+        state = self.board.get_state()
+        self.board.state_lock.release()
+        if state == 'run':
+            if not self.background_img:
+                self.background_img = pygame.image.load('img/' + self.user_input + '.jpg').convert_alpha()
+                self.background_img.set_alpha(150)
+                self.background_img = pygame.transform.scale(self.background_img, self.window_size)
+            self.__screen.blit(self.background_img, (0, 0))
+            self.__ui_white.fill(color='red')
             self.__screen.blit(self.__ui_white,
-                               (block[1] * self.block_size[0], block[0] * self.block_size[1]))
-        score_text = self.myfont.render('Score: {}'.format(self.board.score), True, (0, 0, 0))
-        self.__screen.blit(score_text, (0, 0))
+                               (self.board.food_pos[1] * self.block_size[0], self.board.food_pos[0] * self.block_size[1]))
+            for i, block in enumerate(self.board.bodies):
+                if i == 0:
+                    self.__ui_white.fill(color='yellow')
+                else:
+                    self.__ui_white.fill(color='blue')
+                self.__screen.blit(self.__ui_white,
+                                   (block[1] * self.block_size[0], block[0] * self.block_size[1]))
+            score_text = self.myfont.render('Score: {}'.format(self.board.score), True, (0, 0, 0))
+            self.__screen.blit(score_text, (0, 0))
+        elif state == 'wait':
+            loading_text = self.myfont.render('Loading scene...', True, (255, 0, 0))
+            textRect = loading_text.get_rect()
+            textRect.center = [i // 2 for i in self.window_size]
+            self.__screen.blit(loading_text, textRect)
+        elif state == 'end':
+            if self.background_img:
+                self.__screen.blit(self.background_img, (0, 0))
+            end_text = self.myfont.render('Your score is {}'.format(self.board.score), True, (255, 0, 0))
+            textRect = end_text.get_rect()
+            textRect.center = [i // 2 for i in self.window_size]
+            self.__screen.blit(end_text, textRect)
+
         self.__draw_chat()
         pygame.display.update()
 
     def __draw_chat(self):
-        if self.display:
-            chat = pygame.font.SysFont(random.choice([i for i in pygame.font.get_fonts() if is_chinese(i)]), 20)
-            self.chat_str_lock.acquire()
-            text = chat.render(
-                self.chat_str,
-                True,
-                (0, 0, 0)
-                # [random.randint(0, 255) for i in range(3)]
-                # [random.randint(0, 255) for i in range(3)]
-            )
-            self.chat_str_lock.release()
-            # 获得显示对象的 rect区域大小
-            textRect = text.get_rect()
-            # 设置显示对象居中
-            textRect.center = (300, 200)
-            self.__screen.blit(text, textRect)
+        chat = pygame.font.SysFont(random.choice([i for i in pygame.font.get_fonts() if is_chinese(i)]), 20)
+        self.chat_str_lock.acquire()
+        text = chat.render(
+            self.chat_str,
+            True,
+            (0, 0, 0)
+            # [random.randint(0, 255) for i in range(3)]
+            # [random.randint(0, 255) for i in range(3)]
+        )
+        self.chat_str_lock.release()
+        # 获得显示对象的 rect区域大小
+        textRect = text.get_rect()
+        # 设置显示对象居中
+        textRect.center = (self.window_size[0]/2, 0)
+        textRect.bottom = self.window_size[1]
+        self.__screen.blit(text, textRect)
 
     def get_chat_str(self):
         while True:
-            string = openai.aichat("假设你是贪吃蛇游戏中的贪吃蛇，你的内心想法是怎样的，用幽默的语气回答，10到20个字") \
-                .replace('"', '')
+            state = ''
+            if self.board.get_state() == 'wait':
+                state = "，正在等待开始"
+            elif self.board.get_state() == 'end':
+                state = "，游戏已经结束"
+            string = openai.aichat(
+                "假设你是贪吃蛇游戏中的贪吃蛇，在{}主题下{}，你的内心想法是怎样的，用幽默的语气回答，10到20个字"
+                    .format(state, self.user_input)
+            ).replace('"', '').replace('“', '').replace('”', '')
             self.chat_str_lock.acquire()
             self.chat_str = string
             self.chat_str_lock.release()
             print(self.chat_str)
             time.sleep(self.chat_period)
+
+    def get_background_img(self, prompt, size, name):
+        openai.aiimg(prompt, size, name)
+        self.board.state_lock.acquire()
+        self.board.state = 'run'
+        self.chat_str = ''
+        self.board.state_lock.release()
 
     def restart(self):
         self.board = Board(self.rows, self.cols)
@@ -191,11 +235,19 @@ class Game:
 
 
 if __name__ == '__main__':
-    game = Game(100, 100, 10, True)
+    user_input = input("输入场景：")
+    game = Game(50, 50, random.randint(5, 20), user_input)
+
+    threads = []
     t = Thread(target=Game.get_chat_str, args=(game,))
     t.start()
+    threads.append(t)
+    t = Thread(target=Game.get_background_img, args=(game, game.prompt, '512x512', game.user_input))
+    t.start()
+    threads.append(t)
+
     game.draw()
-    while game.board.get_running():
+    while True:
         # print(game.board.points)
         action = -1
         for event in pygame.event.get():
@@ -209,12 +261,19 @@ if __name__ == '__main__':
                     action = 2
                 elif event.key == pygame.K_d:
                     action = 3
-        if action != -1:
-            game.board.one_step(action, False)
-        else:
-            # forward
-            game.board.one_step(1, True)
+                elif event.key == pygame.K_ESCAPE:
+                    game.board.state = 'end'
+                    # pygame.quit()
+                    break
+        if game.board.get_state() == 'run':
+            if action != -1:
+                game.board.one_step(action, False)
+            else:
+                # forward
+                game.board.one_step(1, True)
         game.draw()
         time.sleep(1 / game.speed)
     print(game.board.score)
-    t.join()
+
+    for t in threads:
+        t.join()
