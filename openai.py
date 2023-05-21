@@ -2,7 +2,7 @@ import requests
 import json
 headers = {
     'Content-Type': 'application/json',
-    'Authorization': 'Bearer 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',
+    'Authorization': 'Bearer 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',
 }
 
 

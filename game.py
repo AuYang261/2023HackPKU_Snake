@@ -123,6 +123,8 @@ class Game:
         self.board = Board(rows, cols)
         self.speed = speed
         self.display = display
+        self.action = 0
+
         if self.display:
             pygame.init()
             self.window_size = (600, 600)
@@ -136,20 +138,27 @@ class Game:
             self.chat_str = ""
             self.chat_str_lock = Lock()
 
+            head0 = pygame.transform.scale(pygame.image.load('pic/down.png'), self.block_size)
+            head1 = pygame.transform.scale(pygame.image.load('pic/left.png'), self.block_size)
+            head2 = pygame.transform.scale(pygame.image.load('pic/up.png'), self.block_size)
+            head3 = pygame.transform.scale(pygame.image.load('pic/right.png'), self.block_size)
+            self.heads = [head0, head1, head2, head3]
+            self.body = pygame.transform.scale(pygame.image.load('pic/body.png'), self.block_size)
+            self.food = pygame.transform.scale(pygame.image.load('pic/food.png'), self.block_size)
+
     def draw(self):
         if not self.__screen:
             return
         self.__screen.fill(color='white')
-        self.__ui_white.fill(color='red')
-        self.__screen.blit(self.__ui_white,
+        self.__screen.blit(self.food,
                            (self.board.food_pos[1] * self.block_size[0], self.board.food_pos[0] * self.block_size[1]))
         for i, block in enumerate(self.board.bodies):
             if i == 0:
-                self.__ui_white.fill(color='yellow')
+                self.__screen.blit(self.heads[self.action],
+                                   (block[1] * self.block_size[0], block[0] * self.block_size[1]))
             else:
-                self.__ui_white.fill(color='blue')
-            self.__screen.blit(self.__ui_white,
-                               (block[1] * self.block_size[0], block[0] * self.block_size[1]))
+                self.__screen.blit(self.body,
+                                   (block[1] * self.block_size[0], block[0] * self.block_size[1]))
         score_text = self.myfont.render('Score: {}'.format(self.board.score), True, (0, 0, 0))
         self.__screen.blit(score_text, (0, 0))
         self.__draw_chat()
@@ -175,10 +184,10 @@ class Game:
 
     def get_chat_str(self):
         while True:
-            string = openai.aichat("假设你是贪吃蛇游戏中的贪吃蛇，你的内心想法是怎样的，用幽默的语气回答，10到20个字") \
-                .replace('"', '')
+            # string = openai.aichat("假设你是贪吃蛇游戏中的贪吃蛇，你的内心想法是怎样的，用幽默的语气回答，10到20个字") \
+            #     .replace('"', '')
             self.chat_str_lock.acquire()
-            self.chat_str = string
+            self.chat_str = "string"
             self.chat_str_lock.release()
             print(self.chat_str)
             time.sleep(self.chat_period)
@@ -191,26 +200,31 @@ class Game:
 
 
 if __name__ == '__main__':
-    game = Game(100, 100, 10, True)
+    game = Game(60, 60, 10, True)
     t = Thread(target=Game.get_chat_str, args=(game,))
     t.start()
     game.draw()
     while game.board.get_running():
         # print(game.board.points)
-        action = -1
+        flag = 0
         for event in pygame.event.get():
             # print(event)
             if event.type == pygame.KEYDOWN:
+                flag = 1
                 if event.key == pygame.K_s:
-                    action = 0
+                    if game.action != 2:  # 如果当前方向不是向上
+                        game.action = 0
                 elif event.key == pygame.K_a:
-                    action = 1
+                    if game.action != 3:  # 如果当前方向不是向右
+                        game.action = 1
                 elif event.key == pygame.K_w:
-                    action = 2
+                    if game.action != 0:  # 如果当前方向不是向下
+                        game.action = 2
                 elif event.key == pygame.K_d:
-                    action = 3
-        if action != -1:
-            game.board.one_step(action, False)
+                    if game.action != 1:  # 如果当前方向不是向左
+                        game.action = 3
+        if flag:
+            game.board.one_step(game.action, False)
         else:
             # forward
             game.board.one_step(1, True)
