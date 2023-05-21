@@ -132,7 +132,6 @@ class Game:
         self.__screen = pygame.display.set_mode(self.window_size, 0, 32)
         pygame.display.set_caption('Snake')
         self.user_input = user_input
-        self.prompt = "卡通游戏风格的" + self.user_input
 
         self.background_img = None
 
@@ -220,8 +219,9 @@ class Game:
             print(self.chat_str)
             time.sleep(self.chat_period)
 
-    def get_background_img(self, prompt, size, name):
-        openai.aiimg(prompt, size, name)
+    def get_background_img(self):
+        prompt = "卡通游戏风格的" + self.user_input
+        openai.aiimg(prompt, '512x512', self.user_input)
         self.board.state_lock.acquire()
         self.board.state = 'run'
         self.chat_str = ''
@@ -242,7 +242,7 @@ if __name__ == '__main__':
     t = Thread(target=Game.get_chat_str, args=(game,))
     t.start()
     threads.append(t)
-    t = Thread(target=Game.get_background_img, args=(game, game.prompt, '512x512', game.user_input))
+    t = Thread(target=Game.get_background_img, args=(game, ))
     t.start()
     threads.append(t)
 
