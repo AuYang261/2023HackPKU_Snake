@@ -106,7 +106,9 @@ class Board:
 
         if not self.__in_range(next_head_pos):
             # out of range
+            self.state_lock.acquire()
             self.state = 'end'
+            self.state_lock.release()
             return
 
         # calling the occupied callback function
@@ -132,6 +134,7 @@ class Game:
         self.__screen = pygame.display.set_mode(self.window_size, 0, 32)
         pygame.display.set_caption('Snake')
         self.user_input = user_input
+        self.prompt = "卡通游戏风格的" + self.user_input
 
         self.background_img = None
 
@@ -142,6 +145,13 @@ class Game:
         self.chat_last_time = -self.chat_period
         self.chat_str = ""
         self.chat_str_lock = Lock()
+        head0 = pygame.transform.scale(pygame.image.load('pic/down.png'), self.block_size)
+        head1 = pygame.transform.scale(pygame.image.load('pic/left.png'), self.block_size)
+        head2 = pygame.transform.scale(pygame.image.load('pic/up.png'), self.block_size)
+        head3 = pygame.transform.scale(pygame.image.load('pic/right.png'), self.block_size)
+        self.heads = [head0, head1, head2, head3]
+        self.body = pygame.transform.scale(pygame.image.load('pic/body.png'), self.block_size)
+        self.food = pygame.transform.scale(pygame.image.load('pic/food.png'), self.block_size)
 
     def draw(self):
         if not self.__screen:
@@ -153,21 +163,12 @@ class Game:
         if state == 'run':
             if not self.background_img:
                 self.background_img = pygame.image.load('img/' + self.user_input + '.jpg').convert_alpha()
-                self.background_img.set_alpha(150)
+                self.background_img.set_alpha(100)
                 self.background_img = pygame.transform.scale(self.background_img, self.window_size)
             self.__screen.blit(self.background_img, (0, 0))
-            self.__ui_white.fill(color='red')
-            self.__screen.blit(self.__ui_white,
-                               (self.board.food_pos[1] * self.block_size[0], self.board.food_pos[0] * self.block_size[1]))
-            for i, block in enumerate(self.board.bodies):
-                if i == 0:
-                    self.__ui_white.fill(color='yellow')
-                else:
-                    self.__ui_white.fill(color='blue')
-                self.__screen.blit(self.__ui_white,
-                                   (block[1] * self.block_size[0], block[0] * self.block_size[1]))
             score_text = self.myfont.render('Score: {}'.format(self.board.score), True, (0, 0, 0))
             self.__screen.blit(score_text, (0, 0))
+            self.__draw_board()
         elif state == 'wait':
             loading_text = self.myfont.render('Loading scene...', True, (255, 0, 0))
             textRect = loading_text.get_rect()
@@ -180,9 +181,21 @@ class Game:
             textRect = end_text.get_rect()
             textRect.center = [i // 2 for i in self.window_size]
             self.__screen.blit(end_text, textRect)
+            self.__draw_board()
 
         self.__draw_chat()
         pygame.display.update()
+
+    def __draw_board(self):
+        self.__screen.blit(self.food,
+                           (self.board.food_pos[1] * self.block_size[0], self.board.food_pos[0] * self.block_size[1]))
+        for i, block in enumerate(self.board.bodies):
+            if i == 0:
+                self.__screen.blit(self.heads[self.board.direct],
+                                   (block[1] * self.block_size[0], block[0] * self.block_size[1]))
+            else:
+                self.__screen.blit(self.body,
+                                   (block[1] * self.block_size[0], block[0] * self.block_size[1]))
 
     def __draw_chat(self):
         chat = pygame.font.SysFont(random.choice([i for i in pygame.font.get_fonts() if is_chinese(i)]), 20)
@@ -219,9 +232,8 @@ class Game:
             print(self.chat_str)
             time.sleep(self.chat_period)
 
-    def get_background_img(self):
-        prompt = "卡通游戏风格的" + self.user_input
-        openai.aiimg(prompt, '512x512', self.user_input)
+    def get_background_img(self, prompt, size, name):
+        openai.aiimg(prompt, size, name)
         self.board.state_lock.acquire()
         self.board.state = 'run'
         self.chat_str = ''
@@ -242,7 +254,7 @@ if __name__ == '__main__':
     t = Thread(target=Game.get_chat_str, args=(game,))
     t.start()
     threads.append(t)
-    t = Thread(target=Game.get_background_img, args=(game, ))
+    t = Thread(target=Game.get_background_img, args=(game, game.prompt, '512x512', game.user_input))
     t.start()
     threads.append(t)
 
@@ -262,7 +274,9 @@ if __name__ == '__main__':
                 elif event.key == pygame.K_d:
                     action = 3
                 elif event.key == pygame.K_ESCAPE:
+                    game.board.state_lock.acquire()
                     game.board.state = 'end'
+                    game.board.state_lock.release()
                     # pygame.quit()
                     break
         if game.board.get_state() == 'run':
