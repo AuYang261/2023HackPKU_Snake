@@ -11,6 +11,16 @@ import numpy as np
 import random
 import pygame
 from Grid import *
+import openai
+from threading import Thread, Lock
+import unicodedata
+
+
+def is_chinese(string):
+    for char in string:
+        if 'CJK' in unicodedata.name(char):
+            return True
+    return False
 
 
 class Board:
@@ -121,6 +131,10 @@ class Game:
             pygame.display.set_caption('Snake')
             self.__ui_white = pygame.Surface(self.block_size)
             self.myfont = pygame.font.Font(None, 60)
+            self.chat_period = 20  # s
+            self.chat_last_time = -self.chat_period
+            self.chat_str = ""
+            self.chat_str_lock = Lock()
 
     def draw(self):
         if not self.__screen:
@@ -138,9 +152,36 @@ class Game:
                                (block[1] * self.block_size[0], block[0] * self.block_size[1]))
         score_text = self.myfont.render('Score: {}'.format(self.board.score), True, (0, 0, 0))
         self.__screen.blit(score_text, (0, 0))
-        for event in pygame.event.get():
-            pass
+        self.__draw_chat()
         pygame.display.update()
+
+    def __draw_chat(self):
+        if self.display:
+            chat = pygame.font.SysFont(random.choice([i for i in pygame.font.get_fonts() if is_chinese(i)]), 20)
+            self.chat_str_lock.acquire()
+            text = chat.render(
+                self.chat_str,
+                True,
+                (0, 0, 0)
+                # [random.randint(0, 255) for i in range(3)]
+                # [random.randint(0, 255) for i in range(3)]
+            )
+            self.chat_str_lock.release()
+            # 获得显示对象的 rect区域大小
+            textRect = text.get_rect()
+            # 设置显示对象居中
+            textRect.center = (300, 200)
+            self.__screen.blit(text, textRect)
+
+    def get_chat_str(self):
+        while True:
+            string = openai.aichat("假设你是贪吃蛇游戏中的贪吃蛇，你的内心想法是怎样的，用幽默的语气回答，10到20个字") \
+                .replace('"', '')
+            self.chat_str_lock.acquire()
+            self.chat_str = string
+            self.chat_str_lock.release()
+            print(self.chat_str)
+            time.sleep(self.chat_period)
 
     def restart(self):
         self.board = Board(self.rows, self.cols)
@@ -151,6 +192,8 @@ class Game:
 
 if __name__ == '__main__':
     game = Game(100, 100, 10, True)
+    t = Thread(target=Game.get_chat_str, args=(game,))
+    t.start()
     game.draw()
     while game.board.get_running():
         # print(game.board.points)
@@ -174,3 +217,4 @@ if __name__ == '__main__':
         game.draw()
         time.sleep(1 / game.speed)
     print(game.board.score)
+    t.join()
